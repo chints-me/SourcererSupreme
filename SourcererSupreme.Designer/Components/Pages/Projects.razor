@@ -1,0 +1,200 @@
+﻿@page "/projects"
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge">
+    <MudGrid>
+        <!-- Header with Add Project Button -->
+        <MudItem xs="12">
+            <MudPaper Class="d-flex flex-row align-center justify-space-between pa-4 mb-4">
+                <MudText Typo="Typo.h4">Projects</MudText>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add"
+                           OnClick="OpenCreateDialog">
+                    New Project
+                </MudButton>
+            </MudPaper>
+        </MudItem>
+
+        <!-- Project Cards -->
+        @if (_projects.Any())
+        {
+            @foreach (var project in _projects)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Elevation="4" Class="ma-2">
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">@project.Name</MudText>
+                            </CardHeaderContent>
+                            <CardHeaderActions>
+                                <MudMenu Icon="@Icons.Material.Filled.MoreVert">
+                                    <MudMenuItem OnClick="@(() => NavigateToForms(project.Id))">
+                                        Open Forms
+                                    </MudMenuItem>
+                                    <MudMenuItem OnClick="@(() => OpenEditDialog(project))">
+                                        Edit
+                                    </MudMenuItem>
+                                    <MudMenuItem OnClick="@(() => DeleteProject(project))"
+                                                 Icon="@Icons.Material.Filled.Delete">
+                                        Delete
+                                    </MudMenuItem>
+                                </MudMenu>
+                            </CardHeaderActions>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudText>@project.Description</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text"
+                                       Color="Color.Primary"
+                                       OnClick="@(() => NavigateToForms(project.Id))">
+                                Open Forms
+                            </MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        }
+        else
+        {
+            <MudItem xs="12">
+                <MudAlert Severity="Severity.Info">
+                    No projects found. Create your first project to get started!
+                </MudAlert>
+            </MudItem>
+        }
+    </MudGrid>
+</MudContainer>
+
+<!-- Create/Edit Project Dialog -->
+<MudDialog @bind-IsVisible="_dialogVisible">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(_editingProject == null ? "New Project" : "Edit Project")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_projectName"
+                      Label="Project Name"
+                      Required="true"
+                      RequiredError="Project name is required" />
+        <MudTextField @bind-Value="_projectDescription"
+                      Label="Description"
+                      Lines="3"
+                      Class="mt-3" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CloseDialog">Cancel</MudButton>
+        <MudButton Color="Color.Primary"
+                   OnClick="SaveProject">
+            @(_editingProject == null ? "Create" : "Save")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<Project> _projects = new();
+    private bool _dialogVisible;
+    private string _projectName = "";
+    private string _projectDescription = "";
+    private Project? _editingProject;
+
+    [Inject] private IDbContextFactory<DesignerDbContext> DbFactory { get; set; } = default!;
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProjects();
+    }
+
+    private async Task LoadProjects()
+    {
+        await using var context = await DbFactory.CreateDbContextAsync();
+        _projects = await context.Projects.ToListAsync();
+    }
+
+    private void OpenCreateDialog()
+    {
+        _editingProject = null;
+        _projectName = "";
+        _projectDescription = "";
+        _dialogVisible = true;
+    }
+
+    private void OpenEditDialog(Project project)
+    {
+        _editingProject = project;
+        _projectName = project.Name;
+        _projectDescription = project.Description;
+        _dialogVisible = true;
+    }
+
+    private void CloseDialog()
+    {
+        _dialogVisible = false;
+    }
+
+    private async Task SaveProject()
+    {
+        if (string.IsNullOrWhiteSpace(_projectName))
+            return;
+
+        await using var context = await DbFactory.CreateDbContextAsync();
+
+        if (_editingProject == null)
+        {
+            // Create new project
+            var project = new Project
+            {
+                Name = _projectName,
+                Description = _projectDescription,
+                CreatedAt = DateTime.UtcNow
+            };
+            context.Projects.Add(project);
+        }
+        else
+        {
+            // Update existing project
+            var project = await context.Projects.FindAsync(_editingProject.Id);
+            if (project != null)
+            {
+                project.Name = _projectName;
+                project.Description = _projectDescription;
+            }
+        }
+
+        await context.SaveChangesAsync();
+        await LoadProjects();
+
+        Snackbar.Add(_editingProject == null ? "Project created successfully!" : "Project updated successfully!",
+            Severity.Success);
+
+        _dialogVisible = false;
+    }
+
+    private async Task DeleteProject(Project project)
+    {
+        var parameters = new DialogParameters
+        {
+            { "ContentText", $"Are you sure you want to delete project '{project.Name}'?" },
+            { "ButtonText", "Delete" },
+            { "Color", Color.Error }
+        };
+
+        var dialog = await DialogService.ShowAsync<DeleteConfirmDialog>("Delete Project", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await using var context = await DbFactory.CreateDbContextAsync();
+            context.Projects.Remove(project);
+            await context.SaveChangesAsync();
+            await LoadProjects();
+            Snackbar.Add("Project deleted successfully!", Severity.Success);
+        }
+    }
+
+    private void NavigateToForms(int projectId)
+    {
+        Navigation.NavigateTo($"/projects/{projectId}/forms");
+    }
+}
