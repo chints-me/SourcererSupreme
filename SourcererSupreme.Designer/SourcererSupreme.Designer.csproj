@@ -10,6 +10,7 @@
     <Folder Include="Components\FormDesigner\" />
     <Folder Include="Components\PropertyEditor\" />
     <Folder Include="Components\ProjectManagement\" />
+    <Folder Include="Components\Shared\" />
   </ItemGroup>
 
   <ItemGroup>
